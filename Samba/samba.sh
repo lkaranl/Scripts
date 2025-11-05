@@ -384,10 +384,52 @@ if ! command_exists smbpasswd; then
     exit 1
 fi
 
-# Verificar se o arquivo de configuração existe
+# Função para criar arquivo de configuração básico do Samba
+create_samba_config() {
+    local config_file="$1"
+    local config_dir=$(dirname "$config_file")
+    
+    # Criar diretório se não existir
+    if [ ! -d "$config_dir" ]; then
+        mkdir -p "$config_dir" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            show_error "Não foi possível criar o diretório $config_dir"
+            return 1
+        fi
+    fi
+    
+    # Criar arquivo de configuração básico
+    cat > "$config_file" << 'EOF'
+[global]
+   workgroup = WORKGROUP
+   server string = Samba Server
+   server role = standalone server
+   log file = /var/log/samba/log.%m
+   max log size = 50
+   dns proxy = no
+   security = user
+   passdb backend = tdbsam
+   map to guest = Bad User
+EOF
+    
+    if [ $? -eq 0 ]; then
+        # Definir permissões corretas
+        chmod 644 "$config_file" 2>/dev/null
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Verificar se o arquivo de configuração existe, criar se não existir
 if [ ! -f "$SAMBA_CONFIG_FILE" ]; then
-    show_error "$(printf "$ERR_CONFIG_NOT_FOUND" "$SAMBA_CONFIG_FILE")"
-    exit 1
+    # Tentar criar o arquivo de configuração
+    if ! create_samba_config "$SAMBA_CONFIG_FILE"; then
+        show_error "Não foi possível criar o arquivo de configuração $SAMBA_CONFIG_FILE"
+        exit 1
+    fi
+    # Informar que o arquivo foi criado
+    zenity --info --title="Configuração" --text="Arquivo de configuração do Samba criado em:\n$SAMBA_CONFIG_FILE" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null
 fi
 
 # Solicitar o caminho
