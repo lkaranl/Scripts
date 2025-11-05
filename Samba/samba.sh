@@ -183,9 +183,9 @@ show_info() {
         echo "╠═══════════════════════════════════════╣"
         # Substituir \n por quebras de linha reais e formatar
         local msg=$(echo -e "$1" | sed 's/\\n/\n/g')
-        while IFS= read -r line; do
+        echo "$msg" | while IFS= read -r line || [ -n "$line" ]; do
             printf "║ %-37s ║\n" "$line"
-        done <<< "$msg"
+        done
         echo "╚═══════════════════════════════════════╝"
         echo ""
     else
@@ -265,9 +265,9 @@ ask_input() {
         echo "║ $prompt"
         echo "╚═══════════════════════════════════════╝"
         echo -n "> "
-        # Tentar ler do terminal, se não conseguir, ler do stdin
-        if [ -t 0 ] && [ -c /dev/tty ]; then
-            read -r response < /dev/tty
+        # Sempre tentar ler do terminal quando disponível
+        if [ -c /dev/tty ]; then
+            read -r response < /dev/tty 2>/dev/null || read -r response
         else
             read -r response
         fi
@@ -291,9 +291,9 @@ ask_question() {
         echo "╚═══════════════════════════════════════╝"
         echo -n "(s/n): "
         while true; do
-            # Tentar ler do terminal, se não conseguir, ler do stdin
-            if [ -t 0 ] && [ -c /dev/tty ]; then
-                read -r response < /dev/tty
+            # Sempre tentar ler do terminal quando disponível
+            if [ -c /dev/tty ]; then
+                read -r response < /dev/tty 2>/dev/null || read -r response
             else
                 read -r response
             fi
@@ -539,12 +539,6 @@ if [ "$USE_CLI_MODE" = true ]; then
     echo "║    Interface gráfica não disponível  ║"
     echo "╚═══════════════════════════════════════╝"
     echo ""
-    
-    # Verificar se estamos em um terminal interativo
-    if [ ! -t 0 ]; then
-        echo "AVISO: Não foi detectado um terminal interativo." >&2
-        echo "Certifique-se de executar este script de um terminal." >&2
-    fi
 fi
 
 # Verificar se zenity está instalado (apenas se não estiver em modo CLI)
@@ -559,10 +553,15 @@ fi
 if ! command_exists smbpasswd; then
     INSTALL_CMD=$(get_install_command "samba")
     show_error "Samba não está instalado. Por favor, instale com: $INSTALL_CMD"
-    echo ""
     if [ "$USE_CLI_MODE" = true ]; then
-        echo "Deseja instalar o Samba agora? (s/n): "
-        read -r install_response
+        echo ""
+        echo -n "Deseja instalar o Samba agora? (s/n): "
+        # Garantir leitura do terminal
+        if [ -c /dev/tty ]; then
+            read -r install_response < /dev/tty 2>/dev/null || read -r install_response
+        else
+            read -r install_response
+        fi
         if [[ "$install_response" =~ ^[sS] ]]; then
             echo "Executando: $INSTALL_CMD"
             eval "$INSTALL_CMD"
@@ -573,6 +572,7 @@ if ! command_exists smbpasswd; then
                 exit 1
             fi
         else
+            echo "Instalação cancelada. Por favor, instale o Samba manualmente antes de continuar."
             exit 1
         fi
     else
