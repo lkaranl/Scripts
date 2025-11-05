@@ -323,7 +323,10 @@ ask_input() {
         fi
         
         # Tentar ler do terminal - usar /dev/tty quando disponível (funciona com sudo)
-        if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+        # Primeiro verifica se stdin está disponível, senão tenta /dev/tty
+        if [ -t 0 ]; then
+            read -r response
+        elif [ -c /dev/tty ] && [ -r /dev/tty ]; then
             read -r response < /dev/tty
         else
             read -r response
@@ -356,7 +359,10 @@ ask_question() {
         
         while true; do
             # Tentar ler do terminal - usar /dev/tty quando disponível (funciona com sudo)
-            if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+            # Primeiro verifica se stdin está disponível, senão tenta /dev/tty
+            if [ -t 0 ]; then
+                read -r response
+            elif [ -c /dev/tty ] && [ -r /dev/tty ]; then
                 read -r response < /dev/tty
             else
                 read -r response
@@ -410,7 +416,7 @@ detect_samba_services() {
     # ========================================================================
     case "$distro_id" in
         # Ubuntu
-        ubuntu)
+        ubuntu|pop)
             SAMBA_SERVICE_1="$SERVICE_SMBD_UBUNTU"
             SAMBA_SERVICE_2="$SERVICE_NMBD_UBUNTU"
             ;;
@@ -536,7 +542,7 @@ get_install_command() {
     # ========================================================================
     case "$distro" in
         # Ubuntu
-        ubuntu)
+        ubuntu|pop)
             if [ "$package" = "zenity" ]; then
                 install_cmd="$INSTALL_ZENITY_UBUNTU"
             elif [ "$package" = "samba" ]; then
