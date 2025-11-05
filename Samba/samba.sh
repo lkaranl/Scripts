@@ -144,14 +144,100 @@ SERVICE_NMBD_FEDORA="nmb"
 _checks=`id -u`
 _currentuser=`whoami`
 
-# Função para exibir mensagens de erro
-show_error() {
-    zenity --error --title="$MSG_TITLE_ERROR" --text="$1" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null || echo "ERRO: $1"
-}
-
 # Função para validar se comando existe
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Detectar modo de interface (GUI ou CLI)
+USE_CLI_MODE=false
+if [ -z "$DISPLAY" ] || ! command_exists zenity || ! zenity --version >/dev/null 2>&1; then
+    USE_CLI_MODE=true
+elif ! xset q >/dev/null 2>&1; then
+    USE_CLI_MODE=true
+fi
+
+# ============================================================================
+# FUNÇÕES DE INTERFACE (GUI ou CLI)
+# ============================================================================
+
+# Função para exibir mensagens de erro
+show_error() {
+    if [ "$USE_CLI_MODE" = true ]; then
+        echo "╔═══════════════════════════════════════╗" >&2
+        echo "║           ERRO                        ║" >&2
+        echo "╠═══════════════════════════════════════╣" >&2
+        echo "║ $1" >&2
+        echo "╚═══════════════════════════════════════╝" >&2
+    else
+        zenity --error --title="$MSG_TITLE_ERROR" --text="$1" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null || echo "ERRO: $1" >&2
+    fi
+}
+
+# Função para exibir mensagens de informação
+show_info() {
+    if [ "$USE_CLI_MODE" = true ]; then
+        echo "╔═══════════════════════════════════════╗"
+        echo "║           INFORMAÇÃO                  ║"
+        echo "╠═══════════════════════════════════════╣"
+        echo "║ $1"
+        echo "╚═══════════════════════════════════════╝"
+    else
+        zenity --info --text="$1" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null || echo "INFO: $1"
+    fi
+}
+
+# Função para solicitar entrada de texto
+ask_input() {
+    local title="$1"
+    local prompt="$2"
+    
+    if [ "$USE_CLI_MODE" = true ]; then
+        echo ""
+        echo "╔═══════════════════════════════════════╗"
+        echo "║ $title"
+        echo "╠═══════════════════════════════════════╣"
+        echo "║ $prompt"
+        echo "╚═══════════════════════════════════════╝"
+        echo -n "> "
+        read -r response
+        echo "$response"
+    else
+        zenity --title="$title" --text="$prompt" --entry --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null
+    fi
+}
+
+# Função para fazer perguntas sim/não
+ask_question() {
+    local title="$1"
+    local prompt="$2"
+    
+    if [ "$USE_CLI_MODE" = true ]; then
+        echo ""
+        echo "╔═══════════════════════════════════════╗"
+        echo "║ $title"
+        echo "╠═══════════════════════════════════════╣"
+        echo "║ $prompt"
+        echo "╚═══════════════════════════════════════╝"
+        echo -n "(s/n): "
+        while true; do
+            read -r response
+            case "$response" in
+                [sS]|[sS][iI][mM]|[yY]|[yY][eE][sS])
+                    return 0
+                    ;;
+                [nN]|[nN][ãÃ][oO]|[nN][oO])
+                    return 1
+                    ;;
+                *)
+                    echo -n "Por favor, responda 's' para sim ou 'n' para não: "
+                    ;;
+            esac
+        done
+    else
+        zenity --title="$title" --question --text="$prompt" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_QUESTION" 2>/dev/null
+        return $?
+    fi
 }
 
 # Variável global para armazenar a distribuição detectada
@@ -370,10 +456,21 @@ get_install_command() {
     echo "$install_cmd"
 }
 
-# Verificar se zenity está instalado
-if ! command_exists zenity; then
+# Informar modo de operação
+if [ "$USE_CLI_MODE" = true ]; then
+    echo ""
+    echo "╔═══════════════════════════════════════╗"
+    echo "║    MODO CLI ATIVADO                   ║"
+    echo "║    Interface gráfica não disponível  ║"
+    echo "╚═══════════════════════════════════════╝"
+    echo ""
+fi
+
+# Verificar se zenity está instalado (apenas se não estiver em modo CLI)
+if [ "$USE_CLI_MODE" = false ] && ! command_exists zenity; then
     INSTALL_CMD=$(get_install_command "zenity")
-    echo "ERRO: zenity não está instalado. Por favor, instale com: $INSTALL_CMD"
+    echo "ERRO: zenity não está instalado. Por favor, instale com: $INSTALL_CMD" >&2
+    echo "Ou execute sem display para usar o modo CLI" >&2
     exit 1
 fi
 
@@ -429,11 +526,11 @@ if [ ! -f "$SAMBA_CONFIG_FILE" ]; then
         exit 1
     fi
     # Informar que o arquivo foi criado
-    zenity --info --title="Configuração" --text="Arquivo de configuração do Samba criado em:\n$SAMBA_CONFIG_FILE" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null
+    show_info "Arquivo de configuração do Samba criado em:\n$SAMBA_CONFIG_FILE"
 fi
 
 # Solicitar o caminho
-_path=$(zenity --title="$MSG_TITLE_PATH" --text "$MSG_TEXT_PATH" --entry --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY")
+_path=$(ask_input "$MSG_TITLE_PATH" "$MSG_TEXT_PATH")
 
 # Verificar se o usuário cancelou
 if [ -z "$_path" ]; then
@@ -460,7 +557,7 @@ if [ ! -r "$_path" ] || [ ! -w "$_path" ]; then
 fi
 
 # Solicitar o nome do compartilhamento
-_name=$(zenity --title="$MSG_TITLE_NAME" --text "$MSG_TEXT_NAME" --entry --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY")
+_name=$(ask_input "$MSG_TITLE_NAME" "$MSG_TEXT_NAME")
 
 # Verificar se o usuário cancelou
 if [ -z "$_name" ]; then
@@ -478,8 +575,7 @@ fi
 
 # Verificar se já existe um compartilhamento com esse nome
 if grep -q "^\[$_name\]" "$SAMBA_CONFIG_FILE" 2>/dev/null; then
-    zenity --question --title="$MSG_TITLE_WARNING" --text "$(printf "$MSG_TEXT_DUPLICATE_SHARE" "$_name")" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_QUESTION"
-    if [ $? -ne 0 ]; then
+    if ! ask_question "$MSG_TITLE_WARNING" "$(printf "$MSG_TEXT_DUPLICATE_SHARE" "$_name")"; then
         exit 0
     fi
 fi
@@ -513,10 +609,8 @@ if [ $? -ne 0 ]; then
 fi
 
 # Perguntar se deseja adicionar usuário
-zenity --title="$MSG_TITLE_SAMBA" --question --text "$MSG_TEXT_ADD_USER" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_QUESTION"
-
-if [ $? -eq 0 ]; then
-    _user=$(zenity --title="$MSG_TITLE_USER" --text "$MSG_TEXT_USER" --entry --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY")
+if ask_question "$MSG_TITLE_SAMBA" "$MSG_TEXT_ADD_USER"; then
+    _user=$(ask_input "$MSG_TITLE_USER" "$MSG_TEXT_USER")
     
     # Verificar se o usuário cancelou
     if [ -z "$_user" ]; then
@@ -532,13 +626,12 @@ if [ $? -eq 0 ]; then
     
     # Verificar se o usuário já existe no samba
     if pdbedit -L 2>/dev/null | grep -q "^$_user:"; then
-        zenity --question --title="$MSG_TITLE_WARNING" --text "$(printf "$MSG_TEXT_DUPLICATE_USER" "$_user")" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_QUESTION"
-        if [ $? -eq 0 ]; then
-            zenity --info --text="$MSG_TEXT_PASSWORD" --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY"
+        if ask_question "$MSG_TITLE_WARNING" "$(printf "$MSG_TEXT_DUPLICATE_USER" "$_user")"; then
+            show_info "$MSG_TEXT_PASSWORD"
             smbpasswd "$_user"
         fi
     else
-        zenity --info --text="$MSG_TEXT_PASSWORD" --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY"
+        show_info "$MSG_TEXT_PASSWORD"
         smbpasswd -a "$_user"
         
         if [ $? -ne 0 ]; then
@@ -568,4 +661,4 @@ if ! systemctl is-active --quiet "${SAMBA_SERVICE_1}" || ! systemctl is-active -
 fi
 
 # Mensagem de sucesso
-zenity --info --title="$MSG_TITLE_SUCCESS" --text="$(printf "$MSG_TEXT_SUCCESS" "$_path" "$_name" "$_backup_file")" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_DIALOG"
+show_info "$(printf "$MSG_TEXT_SUCCESS" "$_path" "$_name" "$_backup_file")"
