@@ -300,6 +300,7 @@ ask_input() {
     local title="$1"
     local prompt="$2"
     local show_list="${3:-false}"
+    local response=""
     
     if [ "$USE_CLI_MODE" = true ]; then
         # Se for para selecionar caminho e estiver em modo TUI, mostrar lista
@@ -316,16 +317,18 @@ ask_input() {
             echo "╚═══════════════════════════════════════╝"
             echo -n "> "
         else
+            echo ""
             echo "$prompt"
             echo -n "> "
         fi
         
-        # Sempre tentar ler do terminal quando disponível
-        if [ -c /dev/tty ]; then
-            read -r response < /dev/tty 2>/dev/null || read -r response
+        # Tentar ler do terminal - usar /dev/tty quando disponível (funciona com sudo)
+        if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+            read -r response < /dev/tty
         else
             read -r response
         fi
+        
         echo "$response"
     else
         zenity --title="$title" --text="$prompt" --entry --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null
@@ -352,9 +355,9 @@ ask_question() {
         fi
         
         while true; do
-            # Sempre tentar ler do terminal quando disponível
-            if [ -c /dev/tty ]; then
-                read -r response < /dev/tty 2>/dev/null || read -r response
+            # Tentar ler do terminal - usar /dev/tty quando disponível (funciona com sudo)
+            if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+                read -r response < /dev/tty
             else
                 read -r response
             fi
@@ -694,11 +697,15 @@ if [ ! -f "$SAMBA_CONFIG_FILE" ]; then
         show_error "Não foi possível criar o arquivo de configuração $SAMBA_CONFIG_FILE"
         exit 1
     fi
-    # Informar que o arquivo foi criado
-    show_info "Arquivo de configuração do Samba criado em:\n$SAMBA_CONFIG_FILE"
+    # Informar que o arquivo foi criado (apenas no modo TUI, no CLI simples apenas mostra mensagem)
+    if [ "$USE_TUI_MODE" = true ]; then
+        show_info "Arquivo de configuração do Samba criado em:\n$SAMBA_CONFIG_FILE"
+    else
+        echo "Arquivo de configuração do Samba criado em: $SAMBA_CONFIG_FILE"
+    fi
 fi
 
-# Solicitar o caminho (com lista de diretórios no modo CLI)
+# Solicitar o caminho (com lista de diretórios no modo TUI)
 _path=$(ask_input "$MSG_TITLE_PATH" "$MSG_TEXT_PATH" true)
 
 # Verificar se o usuário cancelou
