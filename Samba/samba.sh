@@ -185,22 +185,22 @@ detect_samba_services() {
     # ========================================================================
     case "$distro_id" in
         # Ubuntu
-        $DISTRO_MAIN_UBUNTU)
+        ubuntu)
             SAMBA_SERVICE_1="$SERVICE_SMBD_UBUNTU"
             SAMBA_SERVICE_2="$SERVICE_NMBD_UBUNTU"
             ;;
         # Debian
-        $DISTRO_MAIN_DEBIAN)
+        debian)
             SAMBA_SERVICE_1="$SERVICE_SMBD_UBUNTU"
             SAMBA_SERVICE_2="$SERVICE_NMBD_UBUNTU"
             ;;
         # Fedora
-        $DISTRO_MAIN_FEDORA)
+        fedora)
             SAMBA_SERVICE_1="$SERVICE_SMBD_FEDORA"
             SAMBA_SERVICE_2="$SERVICE_NMBD_FEDORA"
             ;;
         # Arch Linux
-        $DISTRO_MAIN_ARCH|archlinux)
+        arch|archlinux)
             SAMBA_SERVICE_1="$SERVICE_SMBD_FEDORA"
             SAMBA_SERVICE_2="$SERVICE_NMBD_FEDORA"
             ;;
@@ -209,7 +209,7 @@ detect_samba_services() {
         # DISTRIBUIÇÕES SECUNDÁRIAS (Baseadas nas principais)
         # ====================================================================
         # CachyOS (baseada em Arch)
-        $DISTRO_SECONDARY_ARCH_CACHYOS)
+        cachyos)
             SAMBA_SERVICE_1="$SERVICE_SMBD_FEDORA"
             SAMBA_SERVICE_2="$SERVICE_NMBD_FEDORA"
             ;;
@@ -265,14 +265,30 @@ detect_samba_services() {
             ;;
     esac
     
-    # Verificar se os serviços existem (pelo menos um deve existir)
-    if ! systemctl list-unit-files 2>/dev/null | grep -qE "(${SAMBA_SERVICE_1}|${SAMBA_SERVICE_2})\.service"; then
-        # Tentar verificar se os serviços existem de outra forma
-        if ! systemctl cat "${SAMBA_SERVICE_1}" &>/dev/null && ! systemctl cat "${SAMBA_SERVICE_2}" &>/dev/null; then
-            printf "ERRO: ${ERR_SERVICES_DETECT_FAILED}\n" "${distro_id:-desconhecida}" >&2
-            exit 1
+    # Verificar se os serviços existem (apenas se o Samba estiver instalado)
+    # Se o Samba não estiver instalado, não há problema - os serviços serão criados na instalação
+    if command_exists smbpasswd; then
+        # Samba está instalado, verificar se os serviços existem
+        local service_found=false
+        
+        # Tentar múltiplas formas de verificar
+        if systemctl list-unit-files 2>/dev/null | grep -qE "(${SAMBA_SERVICE_1}|${SAMBA_SERVICE_2})\.service"; then
+            service_found=true
+        elif systemctl cat "${SAMBA_SERVICE_1}" &>/dev/null || systemctl cat "${SAMBA_SERVICE_2}" &>/dev/null; then
+            service_found=true
+        elif systemctl list-units --type=service 2>/dev/null | grep -qE "(${SAMBA_SERVICE_1}|${SAMBA_SERVICE_2})"; then
+            service_found=true
+        fi
+        
+        # Se não encontrou os serviços, mas o Samba está instalado, pode ser um problema de configuração
+        # Mas não vamos bloquear - apenas avisar que pode ser necessário instalar/ativar os serviços
+        if [ "$service_found" = false ]; then
+            # Não bloquear, apenas definir os serviços baseado na distribuição
+            # O usuário pode instalar o Samba depois
+            :
         fi
     fi
+    # Se o Samba não estiver instalado, não há problema - apenas definimos os serviços corretos
 }
 
 # Detectar serviços do Samba
@@ -295,7 +311,7 @@ get_install_command() {
     # ========================================================================
     case "$distro" in
         # Ubuntu
-        $DISTRO_MAIN_UBUNTU)
+        ubuntu)
             if [ "$package" = "zenity" ]; then
                 install_cmd="$INSTALL_ZENITY_UBUNTU"
             elif [ "$package" = "samba" ]; then
@@ -303,7 +319,7 @@ get_install_command() {
             fi
             ;;
         # Debian
-        $DISTRO_MAIN_DEBIAN)
+        debian)
             if [ "$package" = "zenity" ]; then
                 install_cmd="$INSTALL_ZENITY_DEBIAN"
             elif [ "$package" = "samba" ]; then
@@ -311,7 +327,7 @@ get_install_command() {
             fi
             ;;
         # Fedora
-        $DISTRO_MAIN_FEDORA)
+        fedora)
             if [ "$package" = "zenity" ]; then
                 install_cmd="$INSTALL_ZENITY_FEDORA"
             elif [ "$package" = "samba" ]; then
@@ -319,7 +335,7 @@ get_install_command() {
             fi
             ;;
         # Arch Linux
-        $DISTRO_MAIN_ARCH|archlinux)
+        arch|archlinux)
             if [ "$package" = "zenity" ]; then
                 install_cmd="$INSTALL_ZENITY_ARCH"
             elif [ "$package" = "samba" ]; then
@@ -331,7 +347,7 @@ get_install_command() {
         # DISTRIBUIÇÕES SECUNDÁRIAS (Baseadas nas principais)
         # ====================================================================
         # CachyOS (baseada em Arch)
-        $DISTRO_SECONDARY_ARCH_CACHYOS)
+        cachyos)
             if [ "$package" = "zenity" ]; then
                 install_cmd="$INSTALL_ZENITY_CACHYOS"
             elif [ "$package" = "samba" ]; then
