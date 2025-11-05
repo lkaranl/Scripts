@@ -149,12 +149,50 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Detectar modo de interface (GUI ou CLI)
+# Função para mostrar ajuda
+show_help() {
+    echo "Uso: $0 [OPÇÃO]"
+    echo ""
+    echo "Opções:"
+    echo "  --cli    Modo linha de comando (CLI)"
+    echo "  --tui    Modo interface de terminal (TUI)"
+    echo "  --help   Mostra esta ajuda"
+    echo ""
+    echo "Se nenhuma opção for fornecida, tentará usar interface gráfica (GUI)"
+    exit 0
+}
+
+# Parse de argumentos
 USE_CLI_MODE=false
-if [ -z "$DISPLAY" ] || ! command_exists zenity || ! zenity --version >/dev/null 2>&1; then
-    USE_CLI_MODE=true
-elif ! xset q >/dev/null 2>&1; then
-    USE_CLI_MODE=true
+USE_TUI_MODE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --cli)
+            USE_CLI_MODE=true
+            ;;
+        --tui)
+            USE_TUI_MODE=true
+            USE_CLI_MODE=true
+            ;;
+        --help|-h)
+            show_help
+            ;;
+        *)
+            echo "Opção desconhecida: $arg" >&2
+            echo "Use --help para ver as opções disponíveis" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Se nenhum modo foi especificado, tentar usar GUI
+if [ "$USE_CLI_MODE" = false ]; then
+    # Verificar se GUI está disponível
+    if [ -z "$DISPLAY" ] || ! command_exists zenity || ! zenity --version >/dev/null 2>&1; then
+        echo "AVISO: Interface gráfica não disponível. Use --cli ou --tui para modo terminal." >&2
+        USE_CLI_MODE=true
+    fi
 fi
 
 # ============================================================================
@@ -164,11 +202,15 @@ fi
 # Função para exibir mensagens de erro
 show_error() {
     if [ "$USE_CLI_MODE" = true ]; then
-        echo "╔═══════════════════════════════════════╗" >&2
-        echo "║           ERRO                        ║" >&2
-        echo "╠═══════════════════════════════════════╣" >&2
-        echo "║ $1" >&2
-        echo "╚═══════════════════════════════════════╝" >&2
+        if [ "$USE_TUI_MODE" = true ]; then
+            echo "╔═══════════════════════════════════════╗" >&2
+            echo "║           ERRO                        ║" >&2
+            echo "╠═══════════════════════════════════════╣" >&2
+            echo "║ $1" >&2
+            echo "╚═══════════════════════════════════════╝" >&2
+        else
+            echo "ERRO: $1" >&2
+        fi
     else
         zenity --error --title="$MSG_TITLE_ERROR" --text="$1" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null || echo "ERRO: $1" >&2
     fi
@@ -177,73 +219,80 @@ show_error() {
 # Função para exibir mensagens de informação
 show_info() {
     if [ "$USE_CLI_MODE" = true ]; then
-        echo ""
-        echo "╔═══════════════════════════════════════╗"
-        echo "║           INFORMAÇÃO                  ║"
-        echo "╠═══════════════════════════════════════╣"
-        # Substituir \n por quebras de linha reais e formatar
-        local msg=$(echo -e "$1" | sed 's/\\n/\n/g')
-        echo "$msg" | while IFS= read -r line || [ -n "$line" ]; do
-            printf "║ %-37s ║\n" "$line"
-        done
-        echo "╚═══════════════════════════════════════╝"
-        echo ""
+        if [ "$USE_TUI_MODE" = true ]; then
+            echo ""
+            echo "╔═══════════════════════════════════════╗"
+            echo "║           INFORMAÇÃO                  ║"
+            echo "╠═══════════════════════════════════════╣"
+            # Substituir \n por quebras de linha reais e formatar
+            local msg=$(echo -e "$1" | sed 's/\\n/\n/g')
+            echo "$msg" | while IFS= read -r line || [ -n "$line" ]; do
+                printf "║ %-37s ║\n" "$line"
+            done
+            echo "╚═══════════════════════════════════════╝"
+            echo ""
+        else
+            echo "INFO: $1"
+        fi
     else
         zenity --info --text="$1" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null || echo "INFO: $1"
     fi
 }
 
-# Função para listar diretórios e partições (modo CLI)
+# Função para listar diretórios e partições (modo CLI/TUI)
 list_directories() {
-    echo ""
-    echo "╔═══════════════════════════════════════╗"
-    echo "║    DIRETÓRIOS DISPONÍVEIS             ║"
-    echo "╠═══════════════════════════════════════╣"
-    echo ""
-    
-    # Listar pontos de montagem
-    echo "📁 Pontos de Montagem:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    df -h | grep -E '^/dev/' | awk '{printf "  [%s] %s (%s livres de %s)\n", $6, $1, $4, $2}' | column -t
-    echo ""
-    
-    # Listar diretórios comuns
-    echo "📂 Diretórios Comuns:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    common_dirs=("/home" "/mnt" "/media" "/opt" "/srv" "/var" "/tmp")
-    for dir in "${common_dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            echo "  $dir"
+    # Apenas no modo TUI mostrar lista formatada
+    if [ "$USE_TUI_MODE" = true ]; then
+        echo ""
+        echo "╔═══════════════════════════════════════╗"
+        echo "║    DIRETÓRIOS DISPONÍVEIS             ║"
+        echo "╠═══════════════════════════════════════╣"
+        echo ""
+        
+        # Listar pontos de montagem
+        echo "📁 Pontos de Montagem:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        df -h | grep -E '^/dev/' | awk '{printf "  [%s] %s (%s livres de %s)\n", $6, $1, $4, $2}' | column -t
+        echo ""
+        
+        # Listar diretórios comuns
+        echo "📂 Diretórios Comuns:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        common_dirs=("/home" "/mnt" "/media" "/opt" "/srv" "/var" "/tmp")
+        for dir in "${common_dirs[@]}"; do
+            if [ -d "$dir" ]; then
+                echo "  $dir"
+            fi
+        done
+        echo ""
+        
+        # Listar subdiretórios do /home se existir
+        if [ -d "/home" ]; then
+            echo "👤 Diretórios em /home:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ls -1d /home/*/ 2>/dev/null | head -10 | sed 's|/$||' | sed 's/^/  /'
+            echo ""
         fi
-    done
-    echo ""
-    
-    # Listar subdiretórios do /home se existir
-    if [ -d "/home" ]; then
-        echo "👤 Diretórios em /home:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        ls -1d /home/*/ 2>/dev/null | head -10 | sed 's|/$||' | sed 's/^/  /'
+        
+        # Listar subdiretórios do /mnt se existir
+        if [ -d "/mnt" ] && [ "$(ls -A /mnt 2>/dev/null)" ]; then
+            echo "💾 Diretórios em /mnt:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ls -1d /mnt/*/ 2>/dev/null | sed 's|/$||' | sed 's/^/  /'
+            echo ""
+        fi
+        
+        # Listar subdiretórios do /media se existir
+        if [ -d "/media" ] && [ "$(ls -A /media 2>/dev/null)" ]; then
+            echo "📀 Dispositivos em /media:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ls -1d /media/*/ 2>/dev/null | sed 's|/$||' | sed 's/^/  /'
+            echo ""
+        fi
+        
+        echo "╚═══════════════════════════════════════╝"
         echo ""
     fi
-    
-    # Listar subdiretórios do /mnt se existir
-    if [ -d "/mnt" ] && [ "$(ls -A /mnt 2>/dev/null)" ]; then
-        echo "💾 Diretórios em /mnt:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        ls -1d /mnt/*/ 2>/dev/null | sed 's|/$||' | sed 's/^/  /'
-        echo ""
-    fi
-    
-    # Listar subdiretórios do /media se existir
-    if [ -d "/media" ] && [ "$(ls -A /media 2>/dev/null)" ]; then
-        echo "📀 Dispositivos em /media:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        ls -1d /media/*/ 2>/dev/null | sed 's|/$||' | sed 's/^/  /'
-        echo ""
-    fi
-    
-    echo "╚═══════════════════════════════════════╝"
-    echo ""
 }
 
 # Função para solicitar entrada de texto
@@ -253,18 +302,24 @@ ask_input() {
     local show_list="${3:-false}"
     
     if [ "$USE_CLI_MODE" = true ]; then
-        # Se for para selecionar caminho e estiver em modo CLI, mostrar lista
-        if [ "$show_list" = true ] || [[ "$prompt" == *"caminho"* ]] || [[ "$prompt" == *"path"* ]]; then
+        # Se for para selecionar caminho e estiver em modo TUI, mostrar lista
+        if [ "$USE_TUI_MODE" = true ] && ([ "$show_list" = true ] || [[ "$prompt" == *"caminho"* ]] || [[ "$prompt" == *"path"* ]]); then
             list_directories
         fi
         
-        echo ""
-        echo "╔═══════════════════════════════════════╗"
-        echo "║ $title"
-        echo "╠═══════════════════════════════════════╣"
-        echo "║ $prompt"
-        echo "╚═══════════════════════════════════════╝"
-        echo -n "> "
+        if [ "$USE_TUI_MODE" = true ]; then
+            echo ""
+            echo "╔═══════════════════════════════════════╗"
+            echo "║ $title"
+            echo "╠═══════════════════════════════════════╣"
+            echo "║ $prompt"
+            echo "╚═══════════════════════════════════════╝"
+            echo -n "> "
+        else
+            echo "$prompt"
+            echo -n "> "
+        fi
+        
         # Sempre tentar ler do terminal quando disponível
         if [ -c /dev/tty ]; then
             read -r response < /dev/tty 2>/dev/null || read -r response
@@ -283,13 +338,19 @@ ask_question() {
     local prompt="$2"
     
     if [ "$USE_CLI_MODE" = true ]; then
-        echo ""
-        echo "╔═══════════════════════════════════════╗"
-        echo "║ $title"
-        echo "╠═══════════════════════════════════════╣"
-        echo "║ $prompt"
-        echo "╚═══════════════════════════════════════╝"
-        echo -n "(s/n): "
+        if [ "$USE_TUI_MODE" = true ]; then
+            echo ""
+            echo "╔═══════════════════════════════════════╗"
+            echo "║ $title"
+            echo "╠═══════════════════════════════════════╣"
+            echo "║ $prompt"
+            echo "╚═══════════════════════════════════════╝"
+            echo -n "(s/n): "
+        else
+            echo "$prompt"
+            echo -n "(s/n): "
+        fi
+        
         while true; do
             # Sempre tentar ler do terminal quando disponível
             if [ -c /dev/tty ]; then
@@ -533,12 +594,21 @@ get_install_command() {
 
 # Informar modo de operação
 if [ "$USE_CLI_MODE" = true ]; then
-    echo ""
-    echo "╔═══════════════════════════════════════╗"
-    echo "║    MODO CLI ATIVADO                   ║"
-    echo "║    Interface gráfica não disponível  ║"
-    echo "╚═══════════════════════════════════════╝"
-    echo ""
+    if [ "$USE_TUI_MODE" = true ]; then
+        echo ""
+        echo "╔═══════════════════════════════════════╗"
+        echo "║    MODO TUI ATIVADO                   ║"
+        echo "║    Interface de Terminal              ║"
+        echo "╚═══════════════════════════════════════╝"
+        echo ""
+    else
+        echo ""
+        echo "╔═══════════════════════════════════════╗"
+        echo "║    MODO CLI ATIVADO                   ║"
+        echo "║    Interface de Linha de Comando     ║"
+        echo "╚═══════════════════════════════════════╝"
+        echo ""
+    fi
 fi
 
 # Verificar se zenity está instalado (apenas se não estiver em modo CLI)
