@@ -177,22 +177,87 @@ show_error() {
 # Função para exibir mensagens de informação
 show_info() {
     if [ "$USE_CLI_MODE" = true ]; then
+        echo ""
         echo "╔═══════════════════════════════════════╗"
         echo "║           INFORMAÇÃO                  ║"
         echo "╠═══════════════════════════════════════╣"
-        echo "║ $1"
+        # Substituir \n por quebras de linha reais e formatar
+        local msg=$(echo -e "$1" | sed 's/\\n/\n/g')
+        while IFS= read -r line; do
+            printf "║ %-37s ║\n" "$line"
+        done <<< "$msg"
         echo "╚═══════════════════════════════════════╝"
+        echo ""
     else
         zenity --info --text="$1" --width="$ZENITY_WIDTH_DIALOG" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null || echo "INFO: $1"
     fi
+}
+
+# Função para listar diretórios e partições (modo CLI)
+list_directories() {
+    echo ""
+    echo "╔═══════════════════════════════════════╗"
+    echo "║    DIRETÓRIOS DISPONÍVEIS             ║"
+    echo "╠═══════════════════════════════════════╣"
+    echo ""
+    
+    # Listar pontos de montagem
+    echo "📁 Pontos de Montagem:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    df -h | grep -E '^/dev/' | awk '{printf "  [%s] %s (%s livres de %s)\n", $6, $1, $4, $2}' | column -t
+    echo ""
+    
+    # Listar diretórios comuns
+    echo "📂 Diretórios Comuns:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    common_dirs=("/home" "/mnt" "/media" "/opt" "/srv" "/var" "/tmp")
+    for dir in "${common_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            echo "  $dir"
+        fi
+    done
+    echo ""
+    
+    # Listar subdiretórios do /home se existir
+    if [ -d "/home" ]; then
+        echo "👤 Diretórios em /home:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ls -1d /home/*/ 2>/dev/null | head -10 | sed 's|/$||' | sed 's/^/  /'
+        echo ""
+    fi
+    
+    # Listar subdiretórios do /mnt se existir
+    if [ -d "/mnt" ] && [ "$(ls -A /mnt 2>/dev/null)" ]; then
+        echo "💾 Diretórios em /mnt:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ls -1d /mnt/*/ 2>/dev/null | sed 's|/$||' | sed 's/^/  /'
+        echo ""
+    fi
+    
+    # Listar subdiretórios do /media se existir
+    if [ -d "/media" ] && [ "$(ls -A /media 2>/dev/null)" ]; then
+        echo "📀 Dispositivos em /media:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ls -1d /media/*/ 2>/dev/null | sed 's|/$||' | sed 's/^/  /'
+        echo ""
+    fi
+    
+    echo "╚═══════════════════════════════════════╝"
+    echo ""
 }
 
 # Função para solicitar entrada de texto
 ask_input() {
     local title="$1"
     local prompt="$2"
+    local show_list="${3:-false}"
     
     if [ "$USE_CLI_MODE" = true ]; then
+        # Se for para selecionar caminho e estiver em modo CLI, mostrar lista
+        if [ "$show_list" = true ] || [[ "$prompt" == *"caminho"* ]] || [[ "$prompt" == *"path"* ]]; then
+            list_directories
+        fi
+        
         echo ""
         echo "╔═══════════════════════════════════════╗"
         echo "║ $title"
@@ -200,7 +265,12 @@ ask_input() {
         echo "║ $prompt"
         echo "╚═══════════════════════════════════════╝"
         echo -n "> "
-        read -r response
+        # Tentar ler do terminal, se não conseguir, ler do stdin
+        if [ -t 0 ] && [ -c /dev/tty ]; then
+            read -r response < /dev/tty
+        else
+            read -r response
+        fi
         echo "$response"
     else
         zenity --title="$title" --text="$prompt" --entry --width="$ZENITY_WIDTH_ENTRY" --height="$ZENITY_HEIGHT_ENTRY" 2>/dev/null
@@ -221,7 +291,12 @@ ask_question() {
         echo "╚═══════════════════════════════════════╝"
         echo -n "(s/n): "
         while true; do
-            read -r response
+            # Tentar ler do terminal, se não conseguir, ler do stdin
+            if [ -t 0 ] && [ -c /dev/tty ]; then
+                read -r response < /dev/tty
+            else
+                read -r response
+            fi
             case "$response" in
                 [sS]|[sS][iI][mM]|[yY]|[yY][eE][sS])
                     return 0
@@ -464,6 +539,12 @@ if [ "$USE_CLI_MODE" = true ]; then
     echo "║    Interface gráfica não disponível  ║"
     echo "╚═══════════════════════════════════════╝"
     echo ""
+    
+    # Verificar se estamos em um terminal interativo
+    if [ ! -t 0 ]; then
+        echo "AVISO: Não foi detectado um terminal interativo." >&2
+        echo "Certifique-se de executar este script de um terminal." >&2
+    fi
 fi
 
 # Verificar se zenity está instalado (apenas se não estiver em modo CLI)
@@ -478,7 +559,25 @@ fi
 if ! command_exists smbpasswd; then
     INSTALL_CMD=$(get_install_command "samba")
     show_error "Samba não está instalado. Por favor, instale com: $INSTALL_CMD"
-    exit 1
+    echo ""
+    if [ "$USE_CLI_MODE" = true ]; then
+        echo "Deseja instalar o Samba agora? (s/n): "
+        read -r install_response
+        if [[ "$install_response" =~ ^[sS] ]]; then
+            echo "Executando: $INSTALL_CMD"
+            eval "$INSTALL_CMD"
+            if [ $? -eq 0 ]; then
+                show_info "Samba instalado com sucesso!"
+            else
+                show_error "Erro ao instalar Samba. Por favor, instale manualmente."
+                exit 1
+            fi
+        else
+            exit 1
+        fi
+    else
+        exit 1
+    fi
 fi
 
 # Função para criar arquivo de configuração básico do Samba
@@ -529,8 +628,8 @@ if [ ! -f "$SAMBA_CONFIG_FILE" ]; then
     show_info "Arquivo de configuração do Samba criado em:\n$SAMBA_CONFIG_FILE"
 fi
 
-# Solicitar o caminho
-_path=$(ask_input "$MSG_TITLE_PATH" "$MSG_TEXT_PATH")
+# Solicitar o caminho (com lista de diretórios no modo CLI)
+_path=$(ask_input "$MSG_TITLE_PATH" "$MSG_TEXT_PATH" true)
 
 # Verificar se o usuário cancelou
 if [ -z "$_path" ]; then
